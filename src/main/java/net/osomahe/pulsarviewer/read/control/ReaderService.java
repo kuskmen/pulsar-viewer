@@ -16,6 +16,7 @@ import org.jboss.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
+
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -23,7 +24,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -49,6 +50,13 @@ public class ReaderService {
     TopicFacade facadeTopic;
 
     public ReaderInfo readStringMessage(ReaderFilter readerFilter) {
+        if (!facadeTopic.topicExists(readerFilter.getTopicName())) {
+            return new ReaderInfo(
+                    Collections.emptyList(),
+                    "Topic not found: " + readerFilter.getTopicName()
+            );
+        }
+
         log.infof("Reading messages by filter: %s", readerFilter);
         List<ReaderMessage> messages = new ArrayList<>();
         List<String> topics = facadeTopic.getTopics(readerFilter.getTopicName());
@@ -118,7 +126,7 @@ public class ReaderService {
                     log.infof("Stopping reading topic %s. Too much messages already read from Pulsar by filter %s.", topicName, filter);
                     break;
                 }
-                var message = reader.readNext(1, TimeUnit.SECONDS);
+                var message = reader.readNextAsync().get();
                 if (message == null) {
                     break;
                 }
@@ -128,7 +136,7 @@ public class ReaderService {
                 messages.add(new ReaderMessage(message));
             }
             return messages;
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException | ExecutionException e) {
             throw new PulsarReaderException(topicName, e);
         }
     }
@@ -141,15 +149,15 @@ public class ReaderService {
                     .startMessageIdInclusive()
                     .startMessageId(oMessageId.get())
                     .topic(topicName)
-                    .create()) {
-                Message<byte[]> message = reader.readNext();
+                    .createAsync().get()) {
+                Message<byte[]> message = reader.readNextAsync().get();
                 if (message != null) {
                     ReaderMessage readerMessage = new ReaderMessage(message);
                     if (messageId.equals(readerMessage.messageId)) {
                         return Collections.singletonList(readerMessage);
                     }
                 }
-            } catch (IOException e) {
+            } catch (IOException | InterruptedException | ExecutionException e) {
                 throw new PulsarReaderException(topicName, messageId, e);
             }
         }

@@ -16,6 +16,20 @@ public class TopicFacade {
     @Inject
     PulsarAdmin pulsarAdmin;
 
+    public Boolean topicExists(String topicName) {
+        try {
+            var stats = 
+                    pulsarAdmin.topics()
+                    .getStatsAsync(topicName)
+                    .get();
+
+            return stats != null;
+        } catch (Exception e) {
+            log.warn("Checking topic existence failed. topicName = " + topicName, e);
+            return false;
+        }
+    }
+
     public List<String> getTopics(String topicName) {
         if (topicName.endsWith("*")) {
             return getTopicsWithStarPattern(topicName);
@@ -31,7 +45,8 @@ public class TopicFacade {
         String namespace = getNamespace(pattern);
         String topicPrefix = pattern.substring(0, pattern.length() - 1).toLowerCase();
         try {
-            return pulsarAdmin.namespaces().getTopics(namespace)
+            return pulsarAdmin.namespaces().getTopicsAsync(namespace)
+                    .get()
                     .stream()
                     .filter(topic -> topic.toLowerCase().startsWith(topicPrefix))
                     .collect(Collectors.toList());
